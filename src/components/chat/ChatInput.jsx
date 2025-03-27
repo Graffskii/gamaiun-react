@@ -1,10 +1,10 @@
 import React, { useState, useContext } from 'react';
-import { AppContext } from '../../contexts/AppContext';
+import { useAppContext } from '../../contexts/AppContext';
 
 const ChatInput = () => {
   const [inputValue, setInputValue] = useState('');
   const [showModeSelector, setShowModeSelector] = useState(false);
-  const { addMessage, simulateAIResponse, chatMode, setChatMode } = useContext(AppContext);
+  const { addMessage, simulateAIResponse, chatMode, setChatMode } = useAppContext();
 
   const handleSendMessage = () => {
     if (inputValue.trim()) {

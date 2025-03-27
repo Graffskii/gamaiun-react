@@ -1,9 +1,9 @@
 import React, { useContext } from 'react';
 import UserProfile from '../sidebar/UserProfile';
-import { AppContext } from '../../contexts/AppContext';
+import { useAppContext } from '../../contexts/AppContext';
 
 const RightSidebar = () => {
-  const { toggleSupportModal } = useContext(AppContext);
+  const { toggleSupportModal } = useAppContext;
 
   return (
     <div className="w-64 bg-[#1E293B] border-l border-gray-700 relative">

@@ -1,8 +1,8 @@
 import React, { useState, useContext } from 'react';
-import { AppContext } from '../../contexts/AppContext';
+import { useAppContext } from '../../contexts/AppContext';
 
 const SupportModal = () => {
-  const { toggleSupportModal } = useContext(AppContext);
+  const { toggleSupportModal } = useAppContext();
   const [category, setCategory] = useState('technical');
   const [description, setDescription] = useState('');
 

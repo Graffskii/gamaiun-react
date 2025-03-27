@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import SourceList from '../sidebar/SourceList';
 import ChatHistory from '../sidebar/ChatHistory';
+import { useAppContext } from '../../contexts/AppContext';
 
 const LeftSidebar = () => {
   const [expandedSource, setExpandedSource] = useState(null);
+  const { createNewChat } = useAppContext();
 
   const handleCreateNewChat = () => {
-    console.log('Creating new chat');
-    // Здесь будет логика создания нового чата
+    createNewChat();
   };
 
   return (

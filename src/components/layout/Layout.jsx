@@ -3,13 +3,13 @@ import LeftSidebar from './LeftSidebar';
 import MainChat from './MainChat';
 import RightSidebar from './RightSidebar';
 import SupportModal from '../modals/SupportModal';
-import { AppContext } from '../../contexts/AppContext';
+import { useAppContext } from '../../contexts/AppContext';
 
 const Layout = () => {
-  const { showSupportModal } = useContext(AppContext);
+  const { showSupportModal } = useAppContext();
 
   return (
-    <div className="flex h-screen bg-[#0F172A] text-gray-100">
+    <div className="flex h-screen bg-gray-800 text-gray-100">
       <LeftSidebar />
       <MainChat />
       <RightSidebar />

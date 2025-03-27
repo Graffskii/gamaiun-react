@@ -1,9 +1,9 @@
 import React, { useContext, useEffect, useRef } from 'react';
-import { AppContext } from '../../contexts/AppContext';
+import { useAppContext } from '../../contexts/AppContext';
 import ChatMessage from './ChatMessage';
 
 const ChatContainer = () => {
-  const { messages } = useContext(AppContext);
+  const { messages } = useAppContext();
   const containerRef = useRef(null);
 
   // Автоскролл вниз при новых сообщениях
