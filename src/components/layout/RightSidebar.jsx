@@ -3,7 +3,7 @@ import UserProfile from '../sidebar/UserProfile';
 import { useAppContext } from '../../contexts/AppContext';
 
 const RightSidebar = () => {
-  const { toggleSupportModal } = useAppContext;
+  const { toggleSupportModal } = useAppContext();
 
   return (
     <div className="w-64 bg-[#1E293B] border-l border-gray-700 relative">

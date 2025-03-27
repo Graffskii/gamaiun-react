@@ -1,9 +1,11 @@
 import React, { useContext, useEffect, useRef } from 'react';
 import { useAppContext } from '../../contexts/AppContext';
+import LoadingIndicator from '../ui/LoadingIndicator';
+import { motion, AnimatePresence } from 'framer-motion';
 import ChatMessage from './ChatMessage';
 
 const ChatContainer = () => {
-  const { messages } = useAppContext();
+  const { currentChat, isLoading } = useAppContext();
   const containerRef = useRef(null);
 
   // Автоскролл вниз при новых сообщениях
@@ -11,13 +13,16 @@ const ChatContainer = () => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [currentChat.messages]);
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto chat-container p-4 space-y-4">
-      {messages.map(message => (
-        <ChatMessage key={message.id} message={message} />
-      ))}
+      <AnimatePresence>
+        {currentChat.messages.map(message => (
+          <ChatMessage key={message.id} message={message} />
+        ))}
+        {isLoading && <LoadingIndicator />}
+      </AnimatePresence>
     </div>
   );
 };

@@ -14,7 +14,7 @@ const SupportModal = () => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-      <div className="bg-[#1E293B] rounded-lg w-[500px] p-6">
+      <div className="bg-gray-800 rounded-lg w-[500px] p-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-medium">Обращение в поддержку</h3>
           <button onClick={toggleSupportModal} className="text-gray-400 hover:text-white">
