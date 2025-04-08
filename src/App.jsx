@@ -8,11 +8,11 @@ import { useAuth } from './contexts/AuthContext';
 
 // Компонент для защищенных маршрутов
 const PrivateRoute = ({ children }) => {
-  const { isAuthenticated, checkAuthStatus } = useAuth();
+  const { isAuthenticated } = useAuth();
 
-  useEffect(() => {
-    checkAuthStatus();
-  }, [checkAuthStatus]);
+  // useEffect(() => {
+  //   checkAuthStatus();
+  // }, [checkAuthStatus]);
 
   return isAuthenticated ? children : <Navigate to="/auth" />;
 };
