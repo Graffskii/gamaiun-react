@@ -1,215 +1,338 @@
-import React, { createContext, useState, useContext, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
+// import { v4 as uuidv4 } from 'uuid'; // uuid больше не нужен для ID чатов/сообщений от бэка
+import { useAuth } from './AuthContext'; // Импортируем useAuth
+
+const API_BASE_URL = 'http://localhost:5000/api';
 
 const AppContext = createContext();
 
+// --- Вспомогательная функция для API запросов с токеном ---
+// (Можно вынести в отдельный файл api.js)
+const apiFetch = async (url, options = {}, token) => {
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers, // Позволяет переопределить заголовки
+    };
+    // Добавляем токен авторизации, если он есть
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}${url}`, {
+        ...options,
+        headers,
+    });
+
+    // Попытаемся распарсить тело ответа, даже если статус не ОК (для сообщений об ошибках)
+    let data;
+    try {
+        data = await response.json();
+    } catch (e) {
+        // Если тело не JSON или пустое, data останется undefined
+        // Это нормально для ответов типа 204 No Content
+        if (response.status === 204) {
+            return { response, data: null }; // Возвращаем null для 204
+        }
+    }
+
+
+    if (!response.ok) {
+        // Бросаем ошибку с сообщением от сервера, если оно есть, или статус-текстом
+        const errorMessage = data?.message || response.statusText || `HTTP error ${response.status}`;
+        const error = new Error(errorMessage);
+        error.status = response.status; // Добавляем статус к объекту ошибки
+        error.data = data; // Добавляем тело ответа к ошибке для возможного анализа
+        throw error;
+    }
+
+    return { response, data }; // Возвращаем и ответ, и данные
+};
+
+
 export const AppProvider = ({ children }) => {
-    const [selectedFiles, setSelectedFiles] = useState([]);
-    const [sources, setSources] = useState([
-        {
-            id: 'corp-docs',
-            name: 'Корпоративные документы',
-            icon: 'ri-folder-line',
-            files: [
-                { id: 'corp-1', name: 'Устав компании.pdf', icon: 'ri-file-text-line' },
-                { id: 'corp-2', name: 'Регламент работы.docx', icon: 'ri-file-text-line' },
-                { id: 'corp-3', name: 'Должностные инструкции.pdf', icon: 'ri-file-text-line' }
-            ]
-        },
-        {
-            id: 'finance',
-            name: 'Финансовые отчеты',
-            icon: 'ri-file-chart-line',
-            files: [
-                { id: 'fin-1', name: 'Отчет Q1 2025.xlsx', icon: 'ri-file-excel-line' },
-                { id: 'fin-2', name: 'Отчет Q4 2024.xlsx', icon: 'ri-file-excel-line' }
-            ]
-        },
-        {
-            id: 'kb',
-            name: 'База знаний',
-            icon: 'ri-book-line',
-            files: [
-                { id: 'kb-1', name: 'Руководство пользователя.pdf', icon: 'ri-article-line' },
-                { id: 'kb-2', name: 'FAQ.md', icon: 'ri-article-line' }
-            ]
+    const { token, user, logout } = useAuth(); // Получаем токен, пользователя и logout из AuthContext
+
+    // Состояния чатов и сообщений
+    const [chats, setChats] = useState([]); // Список всех чатов пользователя
+    const [currentChat, setCurrentChat] = useState(null); // Выбранный чат (объект)
+    const [messages, setMessages] = useState([]); // Сообщения текущего чата
+
+    // Состояния загрузки
+    const [isLoadingChats, setIsLoadingChats] = useState(false);
+    const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+    const [isSendingMessage, setIsSendingMessage] = useState(false); // Для индикации отправки
+
+    // Состояние ошибок
+    const [chatError, setChatError] = useState(null);
+
+    // --- Загрузка списка чатов пользователя ---
+    const fetchChats = useCallback(async () => {
+        if (!token) {
+             setChats([]); // Если токена нет, очищаем чаты
+             setCurrentChat(null);
+             setMessages([]);
+             return; // Выходим, если нет токена
         }
-    ]);
-
-
-
-    const [messages, setMessages] = useState([
-        {
-            id: 1,
-            text: "На основе анализа финансовых показателей за последний квартал можно отметить следующие ключевые моменты:",
-            items: [
-                "Рост выручки на 15% по сравнению с предыдущим кварталом",
-                "Увеличение операционной маржи на 2.5 процентных пункта",
-                "Снижение операционных расходов на 8%"
-            ],
-            isUser: false,
-            timestamp: new Date()
-        }
-    ]);
-
-    const [chats, setChats] = useState([
-        {
-            id: 1,
-            title: "Анализ квартального отчета",
-            date: "12 марта 2025",
-            selectedFiles: [],
-            messages: [
-                {
-                    id: 1,
-                    text: "На основе анализа финансовых показателей за последний квартал можно отметить следующие ключевые моменты:",
-                    items: [
-                        "Рост выручки на 15% по сравнению с предыдущим кварталом",
-                        "Увеличение операционной маржи на 2.5 процентных пункта",
-                        "Снижение операционных расходов на 8%"
-                    ],
-                    isUser: false,
-                    timestamp: new Date()
+        setIsLoadingChats(true);
+        setChatError(null);
+        try {
+            const { data: fetchedChats } = await apiFetch('/chats', {}, token);
+            // Сортируем чаты по дате обновления (или создания), самые новые сверху
+            const sortedChats = fetchedChats.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+            setChats(sortedChats);
+            // Автоматически выбираем самый последний чат, если он есть
+            if (sortedChats.length > 0 && !currentChat) {
+                // Вызываем функцию выбора чата, чтобы загрузить сообщения
+                await selectChat(sortedChats[0].id);
+            } else if (sortedChats.length === 0) {
+                setCurrentChat(null); // Нет чатов - нет текущего
+                setMessages([]);
+            }
+            // Если currentChat уже был, но его удалили (нет в fetchedChats), сбросим его
+            else if (currentChat && !sortedChats.find(c => c.id === currentChat.id)) {
+                setCurrentChat(sortedChats.length > 0 ? sortedChats[0] : null);
+                setMessages(sortedChats.length > 0 ? [] : []); // Очищаем сообщения или ставим пустой массив
+                if (sortedChats.length > 0) {
+                   await selectChat(sortedChats[0].id); // Загружаем сообщения для нового текущего чата
                 }
-            ]
-        },
-        {
-            id: 2,
-            title: "Обзор показателей продаж",
-            date: "11 марта 2025",
-            selectedFiles: [],
-            messages: []
-        }
-    ]);
-    const [currentChat, setCurrentChat] = useState(chats[0]);
-    // const [isLoading, setIsLoading] = useState(false);
-    const updateSelectedFiles = useCallback((files) => {
-        setSelectedFiles(files);
-      }, []);
+            }
 
-    const createNewChat = useCallback(() => {
-        const newChat = {
-            id: uuidv4(),
-            title: `Новый чат ${chats.length + 1}`,
-            messages: [],
-            selectedFiles: [...selectedFiles],
-            createdAt: new Date()
+        } catch (error) {
+            console.error("Failed to fetch chats:", error);
+            setChatError(`Не удалось загрузить чаты: ${error.message}`);
+            setChats([]); // Очищаем в случае ошибки
+            setCurrentChat(null);
+            setMessages([]);
+            if (error.status === 401) { // Если токен невалиден/протух
+                logout(); // Разлогиниваем пользователя
+            }
+        } finally {
+            setIsLoadingChats(false);
+        }
+    }, [token, logout, currentChat]); // Добавляем currentChat в зависимости, чтобы обработать его удаление
+
+    // --- Загрузка сообщений для конкретного чата ---
+    const fetchMessagesForChat = useCallback(async (chatId) => {
+        if (!token || !chatId) return; // Нужен токен и ID чата
+        setIsLoadingMessages(true);
+        setChatError(null);
+        setMessages([]); // Очищаем предыдущие сообщения перед загрузкой
+        try {
+            const { data: fetchedMessages } = await apiFetch(`/chats/${chatId}/messages`, {}, token);
+             // Маппинг ответа бэкенда к структуре фронтенда, если нужно
+             const formattedMessages = fetchedMessages.map(msg => ({
+                id: msg.id,
+                text: msg.content,
+                isUser: msg.sender === 'user', // Определяем по полю sender
+                timestamp: new Date(msg.timestamp), // Преобразуем строку в дату
+                metadata: msg.metadata // Сохраняем метаданные, если они есть
+                // Добавь другие поля при необходимости
+            }));
+            setMessages(formattedMessages);
+        } catch (error) {
+            console.error(`Failed to fetch messages for chat ${chatId}:`, error);
+            setChatError(`Не удалось загрузить сообщения: ${error.message}`);
+            setMessages([]); // Очищаем в случае ошибки
+             if (error.status === 401) {
+                logout();
+            } else if (error.status === 403 || error.status === 404) {
+                // Чат не найден или нет доступа, возможно его удалили
+                // Перезагружаем список чатов, чтобы убрать его из списка
+                await fetchChats();
+            }
+        } finally {
+            setIsLoadingMessages(false);
+        }
+    }, [token, logout, fetchChats]);
+
+    // --- Выбор текущего чата ---
+    const selectChat = useCallback(async (chatId) => {
+        const chatToSelect = chats.find(c => c.id === chatId);
+        if (chatToSelect && (!currentChat || currentChat.id !== chatId)) {
+            setCurrentChat(chatToSelect);
+            await fetchMessagesForChat(chatId); // Загружаем сообщения для выбранного чата
+        } else if (!chatToSelect) {
+            console.warn(`Attempted to select non-existent chat ID: ${chatId}`);
+            // Возможно, чат был удален, перезагрузим список
+            await fetchChats();
+        }
+    }, [chats, currentChat, fetchMessagesForChat, fetchChats]); // Добавили fetchChats
+
+
+    // --- Создание нового чата ---
+    const createNewChat = useCallback(async (title = null) => { // Принимаем опциональный title
+        if (!token) return; // Нужен токен
+        setIsLoadingChats(true); // Можно использовать isLoadingChats или добавить новый флаг
+        setChatError(null);
+        try {
+            // Отправляем запрос на создание чата
+            const body = title ? { title } : {}; // Отправляем title, если он есть
+            const { data: newChatFromApi } = await apiFetch('/chats', {
+                method: 'POST',
+                body: JSON.stringify(body)
+            }, token);
+
+            // Форматируем ответ API под структуру фронтенда (добавляем пустые сообщения)
+            const newChatForState = {
+                ...newChatFromApi,
+                 // На бэке нет поля date, используем createdAt или updatedAt
+                date: new Date(newChatFromApi.updatedAt || newChatFromApi.createdAt).toLocaleDateString(),
+                messages: [] // Новый чат начинается без сообщений
+                // selectedFiles пока не трогаем, если они не хранятся на бэке для чата
+            };
+
+            // Добавляем новый чат в начало списка и делаем его текущим
+            setChats(prevChats => [newChatForState, ...prevChats]);
+            setCurrentChat(newChatForState);
+            setMessages([]); // У нового чата нет сообщений
+
+        } catch (error) {
+            console.error("Failed to create new chat:", error);
+            setChatError(`Не удалось создать чат: ${error.message}`);
+             if (error.status === 401) {
+                logout();
+            }
+        } finally {
+            setIsLoadingChats(false);
+        }
+    }, [token, logout]);
+
+    // --- Отправка сообщения ---
+    const sendMessage = useCallback(async (messageContent) => {
+        if (!token || !currentChat || !messageContent.trim()) return;
+
+        setIsSendingMessage(true);
+        setChatError(null);
+
+        const optimisticUserMessage = {
+            id: `temp-${Date.now()}`, // Временный ID для UI
+            text: messageContent.trim(),
+            isUser: true,
+            timestamp: new Date(),
+            status: 'sending' // Добавляем статус для UI
         };
 
-        setChats(prevChats => [...prevChats, newChat]);
-        setCurrentChat(newChat);
-    }, [chats]);
+        // Оптимистичное обновление: добавляем сообщение пользователя сразу
+        setMessages(prev => [...prev, optimisticUserMessage]);
 
-    const addMessageToChat = useCallback((chatId, message) => {
-        setChats(prevChats =>
-            prevChats.map(chat =>
-                chat.id === chatId
-                    ? {
-                        ...chat,
-                        messages: [
-                            ...chat.messages,
-                            {
-                                ...message,
-                                id: chat.messages.length + 1,
-                                timestamp: new Date()
-                            }
-                        ]
-                    }
-                    : chat
-            )
-        );
+        try {
+            // Отправляем сообщение на бэкенд
+            const { data: apiResponse } = await apiFetch(`/chats/${currentChat.id}/messages`, {
+                method: 'POST',
+                body: JSON.stringify({ content: messageContent.trim() })
+            }, token);
 
-        // Обновляем текущий чат, если это нужный чат
-        if (currentChat && currentChat.id === chatId) {
-            setCurrentChat(prevChat => ({
-                ...prevChat,
-                messages: [
-                    ...prevChat.messages,
-                    {
-                        ...message,
-                        id: prevChat.messages.length + 1,
-                        timestamp: new Date()
-                    }
-                ]
-            }));
-        }
-    }, [currentChat]);
+            // Ответ бэкенда содержит userMessage и aiMessage
+            const userMessageFromApi = apiResponse.userMessage;
+            const aiMessageFromApi = apiResponse.aiMessage;
 
-    const [chatMode, setChatMode] = useState('gen'); // 'gen' или 'rag'
-    const [showSupportModal, setShowSupportModal] = useState(false);
-    const [activeSources, setActiveSources] = useState([]);
-
-    const simulateAIResponse = useCallback(() => {
-        if (!currentChat) return;
-
-        const aiResponses = [
-            {
-                text: "Основываясь на представленных данных, можно сделать следующие выводы:",
-                items: [
-                    "Компания демонстрирует стабильный рост даже в текущих экономических условиях",
-                    "Оптимизация операционных процессов привела к значительному сокращению расходов",
-                    "Повышение маржинальности указывает на улучшение ценовой политики"
-                ]
-            },
-            {
-                text: "Анализ показывает следующие тенденции:",
-                items: [
-                    "Положительная динамика выручки на протяжении последних трех кварталов",
-                    "Снижение себестоимости на 5.3% год к году",
-                    "Повышение эффективности маркетинговых кампаний на 12%"
-                ]
-            }
-        ];
-
-        const randomResponse = aiResponses[Math.floor(Math.random() * aiResponses.length)];
-
-        addMessageToChat(currentChat.id, {
-            text: randomResponse.text,
-            isUser: false
-        });
-
-        // Если в ответе есть список элементов, добавим их отдельным сообщением
-        if (randomResponse.items && randomResponse.items.length > 0) {
-            addMessageToChat(currentChat.id, {
-                items: randomResponse.items,
-                isUser: false
+            // Обновляем временное сообщение пользователя данными с сервера
+            // и добавляем ответ AI
+            setMessages(prev => {
+                // Заменяем временное сообщение на реальное
+                const updatedMessages = prev.map(msg =>
+                    msg.id === optimisticUserMessage.id
+                        ? {
+                            id: userMessageFromApi.id,
+                            text: userMessageFromApi.content,
+                            isUser: true,
+                            timestamp: new Date(userMessageFromApi.timestamp),
+                            metadata: userMessageFromApi.metadata,
+                            status: 'sent' // Меняем статус
+                          }
+                        : msg
+                );
+                // Добавляем сообщение от AI
+                updatedMessages.push({
+                    id: aiMessageFromApi.id,
+                    text: aiMessageFromApi.content,
+                    isUser: false,
+                    timestamp: new Date(aiMessageFromApi.timestamp),
+                    metadata: aiMessageFromApi.metadata
+                });
+                return updatedMessages;
             });
+
+            // Обновляем дату последнего сообщения в списке чатов (для сортировки)
+            setChats(prev => prev.map(chat =>
+                chat.id === currentChat.id
+                    ? { ...chat, updatedAt: aiMessageFromApi.timestamp } // Используем время ответа AI
+                    : chat
+            ).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))); // Пересортируем
+
+        } catch (error) {
+            console.error("Failed to send message:", error);
+            setChatError(`Ошибка отправки: ${error.message}`);
+            // Помечаем сообщение как не отправленное
+             setMessages(prev => prev.map(msg =>
+                    msg.id === optimisticUserMessage.id
+                        ? { ...msg, status: 'error' }
+                        : msg
+                ));
+             if (error.status === 401) {
+                logout();
+            }
+        } finally {
+            setIsSendingMessage(false);
         }
-    }, [currentChat, addMessageToChat]);;
 
-    const addMessage = useCallback((message, isUser = true) => {
-        if (!currentChat) return;
+    }, [token, currentChat, logout]);
 
-        addMessageToChat(currentChat.id, {
-            text: message,
-            isUser
-        });
-    }, [currentChat, addMessageToChat]);
 
-    const toggleSupportModal = () => {
-        setShowSupportModal(prev => !prev);
-    };
+    // --- Эффект для первоначальной загрузки чатов при монтировании или при появлении токена ---
+    useEffect(() => {
+        fetchChats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token]); // Зависимость только от токена, fetchChats - useCallback
+
+    // ------------ Остальные состояния и функции (sources, chatMode и т.д.) пока оставляем без изменений -----------
+    // Их нужно будет либо тоже связать с бэкендом (если они там хранятся), либо оставить как локальное состояние UI
+    const [selectedFiles, setSelectedFiles] = useState([]); // Это, вероятно, UI состояние
+    const [sources, setSources] = useState([ /* ... твои sources ... */ ]); // Это тоже может быть UI или загружаться откуда-то
+    const [chatMode, setChatMode] = useState('gen'); // UI состояние
+    const [showSupportModal, setShowSupportModal] = useState(false); // UI состояние
+    const [activeSources, setActiveSources] = useState([]); // UI состояние
+
+    const updateSelectedFiles = useCallback((files) => { setSelectedFiles(files); }, []);
+    const toggleSupportModal = () => { setShowSupportModal(prev => !prev); };
+    //------------------------------------------------------------------------------------------------------------
+
 
     return (
         <AppContext.Provider value={{
-            messages,
-            setMessages,
-            addMessage,
-            simulateAIResponse,
-            updateSelectedFiles,
-            selectedFiles,
-            sources,
-            chatMode,
-            setChatMode,
-            showSupportModal,
-            toggleSupportModal,
-            activeSources,
-            setActiveSources,
+            // Данные
             chats,
-            setChatHistory: setChats,
-            chatHistory: chats,
-            createNewChat,
             currentChat,
-            setCurrentChat
+            messages,
+            sources, // Оставляем пока
+            selectedFiles, // Оставляем пока
+            activeSources, // Оставляем пока
+
+            // Состояния UI и загрузки
+            isLoadingChats,
+            isLoadingMessages,
+            isSendingMessage,
+            chatError,
+            chatMode, // Оставляем пока
+            showSupportModal, // Оставляем пока
+
+            // Функции
+            fetchChats, // Можно вызывать для обновления списка
+            selectChat,
+            createNewChat,
+            sendMessage, // Заменит addMessage и simulateAIResponse
+            setChatMode, // Оставляем пока
+            toggleSupportModal, // Оставляем пока
+            updateSelectedFiles, // Оставляем пока
+            setActiveSources, // Оставляем пока
+
+            // Старые функции (удалить или адаптировать)
+            // setMessages, // Прямое изменение сообщений теперь не нужно
+            // addMessage: sendMessage, // Переименовали
+            // simulateAIResponse, // Заменено логикой в sendMessage
+            // setChatHistory: setChats, // Прямое изменение чатов не нужно
+            // chatHistory: chats, // Используем chats
+            // setCurrentChat: selectChat // Используем selectChat
         }}>
             {children}
         </AppContext.Provider>
