@@ -68,6 +68,9 @@ export const AppProvider = ({ children }) => {
     // Состояние выбора модели для ответа
     const [chatMode, setChatMode] = useState('gen');
 
+    // Состояние для индикации удаления
+    const [isDeletingChat, setIsDeletingChat] = useState(false); 
+
     // --- Функция обновления состояния сообщения (добавление/изменение фидбека) ---
     const updateMessageFeedbackStatus = useCallback((messageId, status) => {
         setMessages(prevMessages =>
@@ -382,6 +385,63 @@ export const AppProvider = ({ children }) => {
 
     }, [token, currentChat, logout, chatMode]);
 
+    // --- НОВАЯ ФУНКЦИЯ: Удаление чата ---
+    const deleteChat = useCallback(async (chatIdToDelete) => {
+        if (!token) {
+            console.error("Cannot delete chat: Not authenticated.");
+            throw new Error("Необходимо войти в систему для удаления чата.");
+        }
+        // Проверяем, не идет ли уже удаление другого чата (простая блокировка)
+        if (isDeletingChat) {
+            console.warn("Deletion already in progress.");
+            return;
+        }
+
+        setIsDeletingChat(true);
+        setChatError(null); // Сбрасываем предыдущие ошибки
+
+        try {
+            // Выполняем DELETE запрос
+            const { response } = await apiFetch(`/chats/${chatIdToDelete}`, {
+                method: 'DELETE'
+            }, token);
+
+            // Бэкенд должен вернуть 204 No Content при успехе
+            if (response.status === 204) {
+                console.log(`Chat ${chatIdToDelete} deleted successfully.`);
+
+                // Обновляем состояние на фронтенде
+                setChats(prevChats => prevChats.filter(chat => chat.id !== chatIdToDelete));
+
+                // Если удалили текущий выбранный чат
+                if (currentChat?.id === chatIdToDelete) {
+                    // Сбрасываем текущий чат и сообщения
+                    setCurrentChat(null);
+                    setMessages([]);
+                    // Можно опционально выбрать следующий чат в списке, если он есть,
+                    // но пока проще просто сбросить
+                    // const remainingChats = chats.filter(chat => chat.id !== chatIdToDelete);
+                    // if (remainingChats.length > 0) {
+                    //     selectChat(remainingChats[0].id); // Выбрать первый из оставшихся
+                    // }
+                }
+            } else {
+                // Если статус не 204, считаем это неожиданным ответом
+                // (хотя apiFetch должен был выбросить ошибку для 4xx/5xx)
+                throw new Error(`Unexpected status code ${response.status} after delete request.`);
+            }
+
+        } catch (error) {
+            console.error(`Failed to delete chat ${chatIdToDelete}:`, error);
+            setChatError(`Ошибка удаления чата: ${error.message}`);
+            // Перебрасываем ошибку, чтобы компонент мог ее обработать при необходимости
+            throw error;
+        } finally {
+            setIsDeletingChat(false); // Сбрасываем флаг загрузки в любом случае
+        }
+    }, [token, currentChat, isDeletingChat, setChatError, selectChat]); // Добавили isDeletingChat, setChatError, selectChat
+
+
 
     // --- Эффект для первоначальной загрузки чатов при монтировании или при появлении токена ---
     useEffect(() => {
@@ -434,6 +494,7 @@ export const AppProvider = ({ children }) => {
             chatError,
             chatMode, 
             showSupportModal, // Оставляем пока
+            isDeletingChat,
 
             // Функции
             fetchChats, // Можно вызывать для обновления списка
@@ -445,6 +506,7 @@ export const AppProvider = ({ children }) => {
             updateSelectedFiles, // Оставляем пока
             setActiveSources, // Оставляем пока
             submitFeedback,
+            deleteChat,
 
             // Старые функции (удалить или адаптировать)
             // setMessages, // Прямое изменение сообщений теперь не нужно

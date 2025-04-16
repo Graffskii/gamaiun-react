@@ -25,7 +25,7 @@ const LeftSidebar = () => {
       </div>
       <div className="flex-1 overflow-y-auto">
         <div className="px-4">
-          <SourceList expandedSource={expandedSource} setExpandedSource={setExpandedSource} />
+          {/* <SourceList expandedSource={expandedSource} setExpandedSource={setExpandedSource} /> */}
           <ChatHistory />
         </div>
       </div>
