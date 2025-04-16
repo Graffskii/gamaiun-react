@@ -40,7 +40,7 @@ const ChatContainer = () => {
         {/* Анимация появления сообщений */}
       <AnimatePresence>
         {messages.map(message => (
-          <ChatMessage key={message.id} message={message} />
+          <ChatMessage key={message.id} message={message} chatId={currentChat?.id} />
         ))}
       </AnimatePresence>
 

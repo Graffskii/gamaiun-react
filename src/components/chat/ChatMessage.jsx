@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useAppContext } from '../../contexts/AppContext'; // Путь может отличаться
 import FeedbackModal from '../modals/FeedbackModal'; // Путь к модальному окну
 
-const ChatMessage = ({ message }) => {
+const ChatMessage = ({ message, chatId }) => {
   const { submitFeedback } = useAppContext(); // Получаем функцию из контекста
   const [isHovering, setIsHovering] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -17,10 +17,11 @@ const ChatMessage = ({ message }) => {
   const handleFeedbackClick = useCallback(async (rating) => {
       if (isSubmittingFeedback || message.feedbackStatus === rating) return; // Не отправлять повторно или во время отправки
 
-      setIsSubmittingFeedback(true);
+      
       try {
           if (rating === 'like') {
-              await submitFeedback(message.id, 'like');
+              setIsSubmittingFeedback(true);
+              await submitFeedback(message.id, 'like', null, chatId);
               // Статус обновится через AppContext -> setMessages
           } else if (rating === 'dislike') {
               // Для дизлайка мы сначала просто помечаем его локально (визуально)
@@ -40,18 +41,20 @@ const ChatMessage = ({ message }) => {
              setIsSubmittingFeedback(false);
          }
       }
-  }, [submitFeedback, message.id, message.feedbackStatus, isSubmittingFeedback]);
+  }, [submitFeedback, message.id, message.feedbackStatus, isSubmittingFeedback, chatId]);
 
 
   // --- Обработчик отправки из модального окна ---
    const handleModalSubmit = useCallback(async (comment) => {
+        console.log('ChatMessage: handleModalSubmit called with comment:', comment); // <--- ДОБАВЬ ЭТОТ ЛОГ
         // Здесь isSubmittingFeedback будет управляться внутри модального окна,
         // но мы можем использовать его для блокировки повторного открытия
+        console.log('isSubmittingFeedback: ', isSubmittingFeedback); // <--- ДОБАВЬ ЭТОТ ЛОГ
         if (isSubmittingFeedback) return;
         setIsSubmittingFeedback(true); // Ставим флаг на время отправки из модалки
         try {
             // Отправляем 'dislike' с комментарием
-            await submitFeedback(message.id, 'dislike', comment);
+            await submitFeedback(message.id, 'dislike', comment, chatId);
             // Статус 'dislike' обновится через AppContext -> setMessages
              setShowFeedbackModal(false); // Закрываем модалку при успехе (управляется из модалки, но на всякий случай)
         } catch (error) {
@@ -63,7 +66,7 @@ const ChatMessage = ({ message }) => {
         } finally {
              setIsSubmittingFeedback(false); // Сбрасываем флаг
         }
-   }, [submitFeedback, message.id, isSubmittingFeedback]);
+   }, [submitFeedback, message.id, isSubmittingFeedback, chatId]);
 
 
   // Определяем, какие иконки показывать (закрашенные или нет)

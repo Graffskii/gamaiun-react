@@ -80,10 +80,17 @@ export const AppProvider = ({ children }) => {
     }, []); // Нет зависимостей, т.к. setMessages стабильна
 
     // --- Функция для отправки фидбека на бэкенд ---
-    const submitFeedback = useCallback(async (messageId, rating, comment = null) => {
+    const submitFeedback = useCallback(async (messageId, rating, comment = null, chatId) => {
+        console.log(`AppContext: submitFeedback called. messageId: ${messageId}, rating: ${rating}, comment: ${comment ? 'Present' : 'Absent'}`); // <--- ЛОГ 1
+
         if (!token) {
             console.error("Cannot submit feedback: Not authenticated.");
             throw new Error("Необходимо войти в систему для отправки отзыва.");
+        }
+
+        if (!chatId) { // Простая проверка, что chatId передан
+            console.error("AppContext: chatId was not provided to submitFeedback.");
+            throw new Error("Не удалось определить чат для отправки отзыва.");
         }
 
         // Оптимистичное обновление UI (сразу показываем выбранный статус)
@@ -97,29 +104,38 @@ export const AppProvider = ({ children }) => {
 
             // Находим chatId для нужного messageId
             // Это не самый эффективный способ, но рабочий для текущей структуры
-            let chatId = null;
-            chats.forEach(chat => {
-                if (chat.messages?.find(msg => msg.id === messageId) || currentChat?.id === chat.id) {
-                     // Если сообщение нашлось в истории чата или это текущий чат
-                     // (сообщения текущего чата могут быть только в `messages`, а не в `chats` массиве)
-                     // Для надежности лучше бы знать chatId заранее
-                     chatId = chat.id;
-                }
-            });
+            // let chatId = null;
+            // console.log('AppContext: Searching for chatId...'); // <--- ЛОГ 2
+            // if (currentChat && messages.some(msg => msg.id === messageId)) {
+            //     chatId = currentChat.id;
+            //     console.log(`AppContext: Found chatId in currentChat: ${chatId}`); // <--- ЛОГ 3а
+            // } else { chats.forEach(chat => {
+            //     if (currentChat?.id === chat.id && messages.some(msg => msg.id === messageId)) {
+            //         chatId = chat.id;
+            //     }
+            //     // if (chat.messages?.find(msg => msg.id === messageId) || currentChat?.id === chat.id) {
+            //     //      // Если сообщение нашлось в истории чата или это текущий чат
+            //     //      // (сообщения текущего чата могут быть только в `messages`, а не в `chats` массиве)
+            //     //      // Для надежности лучше бы знать chatId заранее
+            //     //      chatId = chat.id;
+            //     // }
+            //     console.log(`AppContext: Found chatId by searching chats history (less reliable): ${chatId}`); // <--- ЛОГ 3б
+            // }
+            // )}
 
             // Если сообщение принадлежит текущему чату, берем его ID
-            const messageInCurrentChat = messages.find(msg => msg.id === messageId);
-             if (messageInCurrentChat && currentChat) {
-                chatId = currentChat.id;
-             }
+            // const messageInCurrentChat = messages.find(msg => msg.id === messageId);
+            //  if (messageInCurrentChat && currentChat) {
+            //     chatId = currentChat.id;
+            //  }
 
 
-            if (!chatId) {
-                console.error(`Could not find chat ID for message ID: ${messageId}`);
-                 // Откатываем оптимистичное обновление
-                updateMessageFeedbackStatus(messageId, undefined); // Сбрасываем статус
-                throw new Error("Не удалось определить чат для этого сообщения.");
-            }
+            // if (!chatId) {
+            //     console.error(`Could not find chat ID for message ID: ${messageId}`);
+            //      // Откатываем оптимистичное обновление
+            //     updateMessageFeedbackStatus(messageId, undefined); // Сбрасываем статус
+            //     throw new Error("Не удалось определить чат для этого сообщения.");
+            // }
 
 
             // Формируем URL для API
@@ -134,14 +150,14 @@ export const AppProvider = ({ children }) => {
             // Статус уже обновлен оптимистично
 
         } catch (error) {
-            console.error("Failed to submit feedback:", error);
+            console.error("AppContext: Failed to submit feedback:", error); // <--- ЛОГ 6 (ОШИБКА)
             // Откатываем оптимистичное обновление в случае ошибки
             updateMessageFeedbackStatus(messageId, undefined); // Сбрасываем статус
             setChatError(`Ошибка отправки отзыва: ${error.message}`); // Показываем ошибку
             // Перебрасываем ошибку, чтобы модальное окно могло ее поймать
             throw error;
         }
-    }, [token, updateMessageFeedbackStatus, chats, messages, currentChat]); // Добавили зависимости
+    }, [token, updateMessageFeedbackStatus, setChatError]); // Добавили зависимости
 
     // --- Загрузка списка чатов пользователя ---
     const fetchChats = useCallback(async () => {
