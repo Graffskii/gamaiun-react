@@ -65,6 +65,9 @@ export const AppProvider = ({ children }) => {
     // Состояние ошибок
     const [chatError, setChatError] = useState(null);
 
+    // Состояние выбора модели для ответа
+    const [chatMode, setChatMode] = useState('gen');
+
     // --- Загрузка списка чатов пользователя ---
     const fetchChats = useCallback(async () => {
         if (!token) {
@@ -80,22 +83,22 @@ export const AppProvider = ({ children }) => {
             // Сортируем чаты по дате обновления (или создания), самые новые сверху
             const sortedChats = fetchedChats.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
             setChats(sortedChats);
-            // Автоматически выбираем самый последний чат, если он есть
-            if (sortedChats.length > 0 && !currentChat) {
-                // Вызываем функцию выбора чата, чтобы загрузить сообщения
-                await selectChat(sortedChats[0].id);
-            } else if (sortedChats.length === 0) {
-                setCurrentChat(null); // Нет чатов - нет текущего
-                setMessages([]);
-            }
-            // Если currentChat уже был, но его удалили (нет в fetchedChats), сбросим его
-            else if (currentChat && !sortedChats.find(c => c.id === currentChat.id)) {
-                setCurrentChat(sortedChats.length > 0 ? sortedChats[0] : null);
-                setMessages(sortedChats.length > 0 ? [] : []); // Очищаем сообщения или ставим пустой массив
-                if (sortedChats.length > 0) {
-                   await selectChat(sortedChats[0].id); // Загружаем сообщения для нового текущего чата
-                }
-            }
+            // // Автоматически выбираем самый последний чат, если он есть
+            // if (sortedChats.length > 0 && !currentChat) {
+            //     // Вызываем функцию выбора чата, чтобы загрузить сообщения
+            //     await selectChat(sortedChats[0].id);
+            // } else if (sortedChats.length === 0) {
+            //     setCurrentChat(null); // Нет чатов - нет текущего
+            //     setMessages([]);
+            // }
+            // // Если currentChat уже был, но его удалили (нет в fetchedChats), сбросим его
+            // else if (currentChat && !sortedChats.find(c => c.id === currentChat.id)) {
+            //     setCurrentChat(sortedChats.length > 0 ? sortedChats[0] : null);
+            //     setMessages(sortedChats.length > 0 ? [] : []); // Очищаем сообщения или ставим пустой массив
+            //     if (sortedChats.length > 0) {
+            //        await selectChat(sortedChats[0].id); // Загружаем сообщения для нового текущего чата
+            //     }
+            // }
 
         } catch (error) {
             console.error("Failed to fetch chats:", error);
@@ -109,7 +112,7 @@ export const AppProvider = ({ children }) => {
         } finally {
             setIsLoadingChats(false);
         }
-    }, [token, logout, currentChat]); // Добавляем currentChat в зависимости, чтобы обработать его удаление
+    }, [token, logout]); // Добавляем currentChat в зависимости, чтобы обработать его удаление
 
     // --- Загрузка сообщений для конкретного чата ---
     const fetchMessagesForChat = useCallback(async (chatId) => {
@@ -143,10 +146,15 @@ export const AppProvider = ({ children }) => {
         } finally {
             setIsLoadingMessages(false);
         }
-    }, [token, logout, fetchChats]);
+    }, [token, logout]);
 
     // --- Выбор текущего чата ---
     const selectChat = useCallback(async (chatId) => {
+        if (chatId === null || typeof chatId === 'undefined') {
+            setCurrentChat(null);
+            setMessages([]);
+            return;
+        }
         const chatToSelect = chats.find(c => c.id === chatId);
         if (chatToSelect && (!currentChat || currentChat.id !== chatId)) {
             setCurrentChat(chatToSelect);
@@ -156,7 +164,7 @@ export const AppProvider = ({ children }) => {
             // Возможно, чат был удален, перезагрузим список
             await fetchChats();
         }
-    }, [chats, currentChat, fetchMessagesForChat, fetchChats]); // Добавили fetchChats
+    }, [chats, currentChat, fetchMessagesForChat]); // Добавили fetchChats
 
 
     // --- Создание нового чата ---
@@ -216,10 +224,14 @@ export const AppProvider = ({ children }) => {
         setMessages(prev => [...prev, optimisticUserMessage]);
 
         try {
+            const requestBody = {
+                content: messageContent.trim(),
+                mode: chatMode // <--- ДОБАВЛЕНО: Передаем текущий режим чата
+            };
             // Отправляем сообщение на бэкенд
             const { data: apiResponse } = await apiFetch(`/chats/${currentChat.id}/messages`, {
                 method: 'POST',
-                body: JSON.stringify({ content: messageContent.trim() })
+                body: JSON.stringify(requestBody)
             }, token);
 
             // Ответ бэкенда содержит userMessage и aiMessage
@@ -276,7 +288,7 @@ export const AppProvider = ({ children }) => {
             setIsSendingMessage(false);
         }
 
-    }, [token, currentChat, logout]);
+    }, [token, currentChat, logout, chatMode]);
 
 
     // --- Эффект для первоначальной загрузки чатов при монтировании или при появлении токена ---
@@ -285,11 +297,26 @@ export const AppProvider = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]); // Зависимость только от токена, fetchChats - useCallback
 
+    useEffect(() => {
+        // Этот эффект сработает, когда isLoadingChats станет false ПОСЛЕ загрузки
+        if (!isLoadingChats && chats.length > 0 && !currentChat) {
+            // Если чаты загружены, их больше нуля, и НИ ОДИН чат не выбран - выбираем первый (самый новый)
+            selectChat(chats[0].id);
+        }
+        // Дополнительная проверка: если currentChat установлен, но его больше нет в списке chats (например, удалили)
+        else if (!isLoadingChats && currentChat && !chats.find(c => c.id === currentChat.id)) {
+             // Выбираем первый из оставшихся или null, если список пуст
+             selectChat(chats.length > 0 ? chats[0].id : null);
+        }
+
+    // Зависимости: этот эффект должен реагировать на изменение состояния загрузки, списка чатов и текущего чата
+    }, [chats, currentChat, isLoadingChats, selectChat]);
+
     // ------------ Остальные состояния и функции (sources, chatMode и т.д.) пока оставляем без изменений -----------
     // Их нужно будет либо тоже связать с бэкендом (если они там хранятся), либо оставить как локальное состояние UI
     const [selectedFiles, setSelectedFiles] = useState([]); // Это, вероятно, UI состояние
     const [sources, setSources] = useState([ /* ... твои sources ... */ ]); // Это тоже может быть UI или загружаться откуда-то
-    const [chatMode, setChatMode] = useState('gen'); // UI состояние
+    
     const [showSupportModal, setShowSupportModal] = useState(false); // UI состояние
     const [activeSources, setActiveSources] = useState([]); // UI состояние
 
@@ -313,15 +340,15 @@ export const AppProvider = ({ children }) => {
             isLoadingMessages,
             isSendingMessage,
             chatError,
-            chatMode, // Оставляем пока
+            chatMode, 
             showSupportModal, // Оставляем пока
 
             // Функции
             fetchChats, // Можно вызывать для обновления списка
             selectChat,
             createNewChat,
-            sendMessage, // Заменит addMessage и simulateAIResponse
-            setChatMode, // Оставляем пока
+            sendMessage, 
+            setChatMode, 
             toggleSupportModal, // Оставляем пока
             updateSelectedFiles, // Оставляем пока
             setActiveSources, // Оставляем пока

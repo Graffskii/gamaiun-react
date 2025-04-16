@@ -44,6 +44,29 @@ const ChatMessage = ({ message }) => {
           </ul>
         )}
 
+        {/* Отображение метаданных (списка файлов) */}
+        {message.metadata && Array.isArray(message.metadata) && message.metadata.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-gray-500 border-opacity-50">
+                <h4 className="text-xs font-semibold mb-1 text-gray-300">Найденные источники:</h4>
+                <ul className="space-y-1">
+                    {message.metadata.map((file, index) => (
+                        <li key={index} className="text-sm">
+                            <a
+                                href={file.file_path}
+                                target="_blank" // Открывать в новой вкладке
+                                rel="noopener noreferrer" // Для безопасности
+                                className="inline-flex items-center text-blue-300 hover:text-blue-200 hover:underline"
+                                title={file.file_path} // Показываем путь при наведении
+                            >
+                                <i className="ri-external-link-line text-xs mr-1"></i> {/* Иконка ссылки */}
+                                <span className="truncate">{file.file_name || 'Источник без имени'}</span>
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        )}
+
          {/* Отображение статуса для сообщений пользователя */}
          {message.isUser && message.status && (
             <span className="absolute -bottom-4 right-1 text-xs text-gray-500 italic">
