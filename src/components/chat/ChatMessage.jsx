@@ -13,10 +13,15 @@ const ChatMessage = ({ message, chatId }) => {
   const handleMouseEnter = () => !message.isUser && setIsHovering(true);
   const handleMouseLeave = () => setIsHovering(false);
 
+  // Определяем, есть ли уже фидбек (пришел с сервера или был установлен оптимистично)
+  const hasFeedback = !!message.feedbackStatus;
+
   // --- Обработчики кликов по иконкам фидбека ---
   const handleFeedbackClick = useCallback(async (rating) => {
-      if (isSubmittingFeedback || message.feedbackStatus === rating) return; // Не отправлять повторно или во время отправки
+      // if (isSubmittingFeedback || message.feedbackStatus === rating) return; // Не отправлять повторно или во время отправки
 
+      // Предотвращаем действие, если фидбек уже оставлен ИЛИ идет отправка
+      if (hasFeedback || isSubmittingFeedback) return;
       
       try {
           if (rating === 'like') {
@@ -41,11 +46,13 @@ const ChatMessage = ({ message, chatId }) => {
              setIsSubmittingFeedback(false);
          }
       }
-  }, [submitFeedback, message.id, message.feedbackStatus, isSubmittingFeedback, chatId]);
+  }, [submitFeedback, message.id, hasFeedback, isSubmittingFeedback, chatId]);
 
 
   // --- Обработчик отправки из модального окна ---
    const handleModalSubmit = useCallback(async (comment) => {
+        // Проверка hasFeedback нужна и здесь, на случай если статус обновился пока модалка была открыта
+        if (hasFeedback || isSubmittingFeedback) return;
         console.log('ChatMessage: handleModalSubmit called with comment:', comment); // <--- ДОБАВЬ ЭТОТ ЛОГ
         // Здесь isSubmittingFeedback будет управляться внутри модального окна,
         // но мы можем использовать его для блокировки повторного открытия
@@ -66,7 +73,7 @@ const ChatMessage = ({ message, chatId }) => {
         } finally {
              setIsSubmittingFeedback(false); // Сбрасываем флаг
         }
-   }, [submitFeedback, message.id, isSubmittingFeedback, chatId]);
+   }, [submitFeedback, message.id, hasFeedback, isSubmittingFeedback, chatId]);
 
 
   // Определяем, какие иконки показывать (закрашенные или нет)
@@ -154,7 +161,7 @@ const ChatMessage = ({ message, chatId }) => {
               >
                 <button
                   onClick={() => handleFeedbackClick('like')}
-                  disabled={isSubmittingFeedback || isDisliked} // Блокируем лайк если дизлайкнуто или идет отправка
+                  disabled={isSubmittingFeedback || hasFeedback} // Блокируем лайк если дизлайкнуто или идет отправка
                   className={`p-1 rounded text-gray-400 hover:bg-gray-600 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed ${isLiked ? 'text-green-400 bg-gray-600' : ''}`}
                   title={isLiked ? "Вам понравилось это сообщение" : "Нравится"}
                 >
@@ -162,7 +169,7 @@ const ChatMessage = ({ message, chatId }) => {
                 </button>
                 <button
                   onClick={() => handleFeedbackClick('dislike')}
-                  disabled={isSubmittingFeedback || isLiked} // Блокируем дизлайк если лайкнуто или идет отправка
+                  disabled={isSubmittingFeedback || hasFeedback} // Блокируем дизлайк если лайкнуто или идет отправка
                   className={`p-1 rounded text-gray-400 hover:bg-gray-600 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed ${isDisliked ? 'text-red-400 bg-gray-600' : ''}`}
                   title={isDisliked ? "Вам не понравилось это сообщение" : "Не нравится"}
                 >

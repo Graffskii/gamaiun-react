@@ -219,7 +219,8 @@ export const AppProvider = ({ children }) => {
                 text: msg.content,
                 isUser: msg.sender === 'user', // Определяем по полю sender
                 timestamp: new Date(msg.timestamp), // Преобразуем строку в дату
-                metadata: msg.metadata // Сохраняем метаданные, если они есть
+                metadata: msg.metadata, // Сохраняем метаданные, если они есть
+                feedbackStatus: msg.userFeedback || undefined
                 // Добавь другие поля при необходимости
             }));
             setMessages(formattedMessages);
@@ -237,7 +238,7 @@ export const AppProvider = ({ children }) => {
         } finally {
             setIsLoadingMessages(false);
         }
-    }, [token, logout]);
+    }, [token, logout, fetchChats]);
 
     // --- Выбор текущего чата ---
     const selectChat = useCallback(async (chatId) => {
