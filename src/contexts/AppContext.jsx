@@ -71,6 +71,96 @@ export const AppProvider = ({ children }) => {
     // Состояние для индикации удаления
     const [isDeletingChat, setIsDeletingChat] = useState(false); 
 
+    // --- НОВЫЕ СОСТОЯНИЯ для Google Drive ---
+    const [driveItemsTree, setDriveItemsTree] = useState([]); // Хранит дерево файлов/папок
+    const [selectedDriveItemIds, setSelectedDriveItemIds] = useState(new Set()); // Хранит google_id выбранных элементов
+    const [isLoadingDriveItems, setIsLoadingDriveItems] = useState(false);
+    const [driveItemsError, setDriveItemsError] = useState(null);
+
+    // --- Получение структуры Google Drive ---
+    const fetchDriveItems = useCallback(async () => {
+        if (!token) return; // Нужен токен
+        setIsLoadingDriveItems(true);
+        setDriveItemsError(null);
+        try {
+            const { data: fetchedTree } = await apiFetch('/drive/items', {}, token);
+            setDriveItemsTree(fetchedTree || []); // Устанавливаем полученное дерево
+            console.log('Drive items fetched successfully.');
+        } catch (error) {
+            console.error("Failed to fetch drive items:", error);
+            setDriveItemsError(`Не удалось загрузить структуру Диска: ${error.message}`);
+            setDriveItemsTree([]); // Сбрасываем в случае ошибки
+             if (error.status === 401) {
+                logout(); // Разлогиниваем, если токен невалиден
+            }
+        } finally {
+            setIsLoadingDriveItems(false);
+        }
+    }, [token, logout]); // Зависимости
+
+    // Вспомогательная рекурсивная функция для получения всех ID в поддереве
+    const getAllDescendantIds = useCallback((itemId, nodeMap) => {
+        const ids = new Set([itemId]);
+        const node = nodeMap[itemId];
+        if (node && node.item_type === 'folder' && node.children) {
+            node.children.forEach(child => {
+                getAllDescendantIds(child.google_id, nodeMap).forEach(id => ids.add(id));
+            });
+        }
+        return ids;
+    }, []);
+
+    // Вспомогательная функция для построения карты узлов по ID (чтобы не делать это каждый раз)
+    const buildNodeMap = useCallback((tree) => {
+        const map = {};
+        const traverse = (nodes) => {
+            nodes.forEach(node => {
+                map[node.google_id] = node;
+                if (node.children && node.children.length > 0) {
+                    traverse(node.children);
+                }
+            });
+        };
+        traverse(tree);
+        return map;
+    }, []);
+
+    const toggleDriveItemSelection = useCallback((itemId, itemType) => {
+        setSelectedDriveItemIds(prevSelectedIds => {
+            const newSelectedIds = new Set(prevSelectedIds); // Копируем текущий Set
+            const nodeMap = buildNodeMap(driveItemsTree); // Строим карту узлов для поиска детей
+            const isCurrentlySelected = newSelectedIds.has(itemId);
+
+            if (itemType === 'file') {
+                // Для файла просто добавляем или удаляем
+                if (isCurrentlySelected) {
+                    newSelectedIds.delete(itemId);
+                } else {
+                    newSelectedIds.add(itemId);
+                }
+            } else if (itemType === 'folder') {
+                // Для папки получаем все дочерние ID
+                const allIdsToToggle = getAllDescendantIds(itemId, nodeMap);
+
+                // Определяем новое состояние: если папка была выбрана (или частично), снимаем выбор со всех.
+                // Если не была выбрана, выбираем все.
+                const shouldSelectAll = !isCurrentlySelected; // Простое переключение для начала
+
+                allIdsToToggle.forEach(id => {
+                    if (shouldSelectAll) {
+                        newSelectedIds.add(id);
+                    } else {
+                        newSelectedIds.delete(id);
+                    }
+                });
+            }
+            console.log('Selected Drive IDs:', Array.from(newSelectedIds)); // Логируем для отладки
+            return newSelectedIds; // Возвращаем новый Set
+        });
+    }, [driveItemsTree, getAllDescendantIds, buildNodeMap]); // Зависимости
+
+
+
     // --- Функция обновления состояния сообщения (добавление/изменение фидбека) ---
     const updateMessageFeedbackStatus = useCallback((messageId, status) => {
         setMessages(prevMessages =>
@@ -442,12 +532,27 @@ export const AppProvider = ({ children }) => {
     }, [token, currentChat, isDeletingChat, setChatError, selectChat]); // Добавили isDeletingChat, setChatError, selectChat
 
 
+    // --- Эффект для первоначальной загрузки ---
+    useEffect(() => {
+        if (token) { // Загружаем, только если есть токен
+            fetchChats();
+            fetchDriveItems(); // Вызываем загрузку структуры Диска
+        } else {
+            // Если токена нет, очищаем состояния
+            setChats([]);
+            setCurrentChat(null);
+            setMessages([]);
+            setDriveItemsTree([]);
+            setSelectedDriveItemIds(new Set());
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token]); // Зависимость от токена
 
     // --- Эффект для первоначальной загрузки чатов при монтировании или при появлении токена ---
-    useEffect(() => {
-        fetchChats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]); // Зависимость только от токена, fetchChats - useCallback
+    // useEffect(() => {
+    //     fetchChats();
+    // // eslint-disable-next-line react-hooks/exhaustive-deps
+    // }, [token]); // Зависимость только от токена, fetchChats - useCallback
 
     useEffect(() => {
         // Этот эффект сработает, когда isLoadingChats станет false ПОСЛЕ загрузки
@@ -495,6 +600,12 @@ export const AppProvider = ({ children }) => {
             chatMode, 
             showSupportModal, // Оставляем пока
             isDeletingChat,
+            
+            driveItemsTree,
+            selectedDriveItemIds,
+            isLoadingDriveItems,
+            driveItemsError,
+            
 
             // Функции
             fetchChats, // Можно вызывать для обновления списка
@@ -507,6 +618,8 @@ export const AppProvider = ({ children }) => {
             setActiveSources, // Оставляем пока
             submitFeedback,
             deleteChat,
+            fetchDriveItems, // Можно вызывать для ручного обновления
+            toggleDriveItemSelection,
 
             // Старые функции (удалить или адаптировать)
             // setMessages, // Прямое изменение сообщений теперь не нужно
