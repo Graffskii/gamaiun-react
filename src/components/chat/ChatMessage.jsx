@@ -4,10 +4,12 @@ import { useAppContext } from '../../contexts/AppContext'; // Путь може�
 import FeedbackModal from '../modals/FeedbackModal'; // Путь к модальному окну
 
 const ChatMessage = ({ message, chatId }) => {
-  const { submitFeedback } = useAppContext(); // Получаем функцию из контекста
+  const { submitFeedback, generateFromFileClick } = useAppContext(); // Получаем функцию из контекста
   const [isHovering, setIsHovering] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false); // Локальный статус загрузки фидбека
+
+  
 
   // Обработчики наведения мыши
   const handleMouseEnter = () => !message.isUser && setIsHovering(true);
@@ -15,6 +17,17 @@ const ChatMessage = ({ message, chatId }) => {
 
   // Определяем, есть ли уже фидбек (пришел с сервера или был установлен оптимистично)
   const hasFeedback = !!message.feedbackStatus;
+
+  const handleFileLinkClick = (e, fileInfo) => {
+    e.preventDefault(); // Предотвращаем стандартный переход по ссылке
+    console.log('File link clicked:', fileInfo);
+    if (generateFromFileClick) {
+        // Вызываем новую функцию из контекста, передавая ID текущего AI сообщения и инфо о файле
+        generateFromFileClick(message.id, fileInfo);
+    } else {
+        console.warn('generateFromFileClick function is not available in context');
+    }
+  };
 
   // --- Обработчики кликов по иконкам фидбека ---
   const handleFeedbackClick = useCallback(async (rating) => {
@@ -128,25 +141,30 @@ const ChatMessage = ({ message, chatId }) => {
           )} */}
 
           {/* Отображение метаданных (списка файлов) */}
-          {message.metadata && Array.isArray(message.metadata) && message.metadata.length > 0 && (
+          {message.metadata?.results && Array.isArray(message.metadata.results) && message.metadata.results.length > 0 && (
               <div className="mt-2 pt-2 border-t border-gray-500 border-opacity-50">
                   <h4 className="text-xs font-semibold mb-1 text-gray-300">Найденные источники:</h4>
                   <ul className="space-y-1">
-                      {message.metadata.map((file, index) => (
+                      {message.metadata.results.map((file, index) => (
                           <li key={index} className="text-sm">
                               <a
-                                  href={file.file_path}
-                                  target="_blank" // Открывать в новой вкладке
-                                  rel="noopener noreferrer" // Для безопасности
-                                  className="inline-flex items-center text-blue-300 hover:text-blue-200 hover:underline"
-                                  title={file.file_path} // Показываем путь при наведении
+                                href={file.file_path || '#'} // Используем реальный путь или заглушку
+                                onClick={(e) => handleFileLinkClick(e, { file_name: file.file_name, file_path: file.file_path })}
+                                className="inline-flex items-center text-blue-300 hover:text-blue-200 hover:underline cursor-pointer" // Добавили cursor-pointer
+                                title={`Запросить подробности по файлу: ${file.file_name}`}
                               >
-                                  <i className="ri-external-link-line text-xs mr-1"></i> {/* Иконка ссылки */}
-                                  <span className="truncate">{file.file_name || 'Источник без имени'}</span>
+                                <i className="ri-file-text-line text-xs mr-1"></i> {/* Иконка файла */}
+                                <span className="truncate">{file.file_name || 'Источник без имени'}</span>
+                                {/* Можно оставить иконку внешней ссылки, если путь валидный */}
+                                {/* {file.file_path && <i className="ri-external-link-line text-xs ml-1 opacity-70"></i>} */}
                               </a>
                           </li>
                       ))}
                   </ul>
+                  {/* Сообщение-подсказка */}
+                  <p className="text-xs text-gray-400 italic mt-2">
+                      Нажмите на файл для получения подробного ответа по нему.
+                  </p>
               </div>
           )}
 

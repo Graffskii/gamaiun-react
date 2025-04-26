@@ -390,43 +390,63 @@ export const AppProvider = ({ children }) => {
         }
     }, [token, logout]);
 
-    // --- Отправка сообщения ---
-    const sendMessage = useCallback(async (messageContent) => {
-        if (!token || !currentChat || !messageContent.trim()) return;
+    const sendMessageInternal = useCallback(async (chatId, messageData) => {
+        // messageData: { content: string, mode?: 'gen'|'rag', metadata?: object }
+        if (!token || !chatId) throw new Error("Authentication or Chat ID missing.");
 
         setIsSendingMessage(true);
         setChatError(null);
 
+        console.log(messageData)
+
+        try {
+            const { response, data: apiResponse } = await apiFetch(`/chats/${chatId}/messages`, {
+                method: 'POST',
+                body: JSON.stringify(messageData)
+            }, token);
+
+            // Ожидаем { userMessage: {...} | null, aiMessage: {...} }
+            if (!apiResponse || !apiResponse.aiMessage) {
+               throw new Error("Invalid response structure received from server after sending message.");
+            }
+            return apiResponse; // Возвращаем весь ответ { userMessage, aiMessage }
+
+        } catch (error) {
+             console.error("Failed to send message via internal function:", error);
+             setChatError(`Ошибка отправки сообщения: ${error.message}`);
+             // Перебрасываем ошибку для обработки выше (например, для статуса 'error')
+             throw error;
+        } finally {
+             setIsSendingMessage(false);
+        }
+
+   }, [token, setChatError]); // Основные зависимости
+
+    // --- Старая функция sendMessage (для обычных запросов из ChatInput) ---
+    const sendMessage = useCallback(async (messageContent) => {
+        if (!currentChat || !messageContent.trim()) return;
+
         const optimisticUserMessage = {
-            id: `temp-${Date.now()}`, // Временный ID для UI
+            id: `temp-${Date.now()}`,
             text: messageContent.trim(),
             isUser: true,
             timestamp: new Date(),
-            status: 'sending' // Добавляем статус для UI
+            status: 'sending'
         };
-
-        // Оптимистичное обновление: добавляем сообщение пользователя сразу
         setMessages(prev => [...prev, optimisticUserMessage]);
 
         try {
-            const requestBody = {
+            const messageData = {
                 content: messageContent.trim(),
-                mode: chatMode // <--- ДОБАВЛЕНО: Передаем текущий режим чата
+                mode: chatMode // Используем текущий режим из состояния
             };
-            // Отправляем сообщение на бэкенд
-            const { data: apiResponse } = await apiFetch(`/chats/${currentChat.id}/messages`, {
-                method: 'POST',
-                body: JSON.stringify(requestBody)
-            }, token);
+            const apiResponse = await sendMessageInternal(currentChat.id, messageData);
 
-            // Ответ бэкенда содержит userMessage и aiMessage
-            const userMessageFromApi = apiResponse.userMessage;
+            // Обрабатываем ответ для обычного запроса
+            const userMessageFromApi = apiResponse.userMessage; // Должен быть не null
             const aiMessageFromApi = apiResponse.aiMessage;
 
-            // Обновляем временное сообщение пользователя данными с сервера
-            // и добавляем ответ AI
             setMessages(prev => {
-                // Заменяем временное сообщение на реальное
                 const updatedMessages = prev.map(msg =>
                     msg.id === optimisticUserMessage.id
                         ? {
@@ -434,46 +454,131 @@ export const AppProvider = ({ children }) => {
                             text: userMessageFromApi.content,
                             isUser: true,
                             timestamp: new Date(userMessageFromApi.timestamp),
-                            metadata: userMessageFromApi.metadata,
-                            status: 'sent' // Меняем статус
+                            metadata: userMessageFromApi.metadata, // <- Не уверен, что у userMessage есть metadata? Проверь модель
+                            status: 'sent'
                           }
                         : msg
                 );
-                // Добавляем сообщение от AI
                 updatedMessages.push({
                     id: aiMessageFromApi.id,
                     text: aiMessageFromApi.content,
                     isUser: false,
                     timestamp: new Date(aiMessageFromApi.timestamp),
-                    metadata: aiMessageFromApi.metadata
+                    metadata: aiMessageFromApi.metadata, // Включая originalQuery для RAG
+                     // feedbackStatus не приходит в этом ответе, он загружается отдельно
                 });
                 return updatedMessages;
             });
 
-            // Обновляем дату последнего сообщения в списке чатов (для сортировки)
-            setChats(prev => prev.map(chat =>
+            // Обновляем дату чата
+             setChats(prev => prev.map(chat =>
                 chat.id === currentChat.id
-                    ? { ...chat, updatedAt: aiMessageFromApi.timestamp } // Используем время ответа AI
+                    ? { ...chat, updatedAt: aiMessageFromApi.timestamp }
                     : chat
-            ).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))); // Пересортируем
+            ).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)));
 
         } catch (error) {
-            console.error("Failed to send message:", error);
-            setChatError(`Ошибка отправки: ${error.message}`);
-            // Помечаем сообщение как не отправленное
+             // Ошибка уже залогирована в sendMessageInternal
              setMessages(prev => prev.map(msg =>
                     msg.id === optimisticUserMessage.id
                         ? { ...msg, status: 'error' }
                         : msg
                 ));
-             if (error.status === 401) {
-                logout();
-            }
-        } finally {
-            setIsSendingMessage(false);
+             if (error.status === 401) logout(); // Разлогиниваем, если нужно
         }
 
-    }, [token, currentChat, logout, chatMode]);
+    }, [currentChat, chatMode, sendMessageInternal, setMessages, setChats, logout]);
+
+    // --- НОВАЯ ФУНКЦИЯ: Генерация по клику на файл ---
+    const generateFromFileClick = useCallback(async (aiMessageId, fileInfo) => {
+        if (!currentChat) return;
+
+        // 1. Найти оригинальное AI сообщение
+        const originalAiMessage = messages.find(msg => msg.id === aiMessageId);
+        if (!originalAiMessage || !originalAiMessage.metadata?.originalQuery) {
+            console.error("Could not find original AI message or original query in metadata for ID:", aiMessageId);
+            setChatError("Не удалось найти исходный запрос для этого файла.");
+            return;
+        }
+
+        const originalQuery = originalAiMessage.metadata.originalQuery.query_text;
+        console.log(originalAiMessage)
+        const targetFileName = fileInfo.file_name;
+
+        // 2. Добавить "фейковое" сообщение пользователя
+        const userActionMessage = {
+            id: `temp-file-req-${Date.now()}`,
+            text: `Запрос по файлу: ${targetFileName}`,
+            isUser: true, // Отображаем как сообщение пользователя
+            timestamp: new Date(),
+            // Можно добавить специальный тип или метаданные, если нужно его отличать
+            // type: 'file_query_trigger',
+             status: 'info' // Используем статус info или другой, чтобы не показывать ошибку/отправку
+        };
+        setMessages(prev => [...prev, userActionMessage]);
+
+        // 3. Вызвать внутреннюю функцию отправки с нужными параметрами
+        try {
+            const messageData = {
+                content: originalQuery, // Используем исходный вопрос
+                mode: 'rag', // Можно передать RAG или убрать, бэк решит по metadata
+                metadata: { targetFileName: targetFileName } // Передаем имя файла
+            };
+             // Показываем индикатор загрузки
+            setIsSendingMessage(true); // Используем тот же флаг
+            const apiResponse = await sendMessageInternal(currentChat.id, messageData);
+
+            // Ожидаем ответ ТОЛЬКО с aiMessage
+            const aiMessageFromFile = apiResponse.aiMessage;
+
+             if (aiMessageFromFile) {
+                  // Добавляем ответ от AI
+                 setMessages(prev => [
+                    ...prev,
+                    {
+                        id: aiMessageFromFile.id,
+                        text: aiMessageFromFile.content,
+                        isUser: false,
+                        timestamp: new Date(aiMessageFromFile.timestamp),
+                        metadata: aiMessageFromFile.metadata
+                    }
+                 ]);
+
+                  // Обновляем дату чата
+                 setChats(prev => prev.map(chat =>
+                    chat.id === currentChat.id
+                        ? { ...chat, updatedAt: aiMessageFromFile.timestamp }
+                        : chat
+                  ).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)));
+             } else {
+                 // Если бэкенд не вернул aiMessage (хотя должен был)
+                  throw new Error("Server did not return an AI message for the file-specific request.");
+             }
+
+        } catch (error) {
+             // Ошибка уже залогирована в sendMessageInternal
+             // Можно добавить специфичное сообщение
+             console.error("Error during generateFromFileClick:", error);
+              setChatError(`Ошибка при запросе по файлу: ${error.message}`);
+             // Можно добавить сообщение об ошибке в чат
+               setMessages(prev => [
+                    ...prev,
+                    {
+                        id: `error-${Date.now()}`,
+                        text: `Не удалось получить ответ по файлу "${targetFileName}". Ошибка: ${error.message}`,
+                        isUser: false,
+                        timestamp: new Date(),
+                        isError: true // Флаг для стилизации ошибки
+                    }
+                ]);
+
+              if (error.status === 401) logout();
+        } finally {
+              setIsSendingMessage(false); // Убираем индикатор загрузки
+        }
+
+
+    }, [currentChat, messages, sendMessageInternal, setMessages, setChats, logout, setChatError]); // Зависимости
 
     // --- НОВАЯ ФУНКЦИЯ: Удаление чата ---
     const deleteChat = useCallback(async (chatIdToDelete) => {
@@ -600,11 +705,14 @@ export const AppProvider = ({ children }) => {
             chatMode, 
             showSupportModal, // Оставляем пока
             isDeletingChat,
-            
+
             driveItemsTree,
             selectedDriveItemIds,
             isLoadingDriveItems,
             driveItemsError,
+
+            
+            
             
 
             // Функции
@@ -620,6 +728,8 @@ export const AppProvider = ({ children }) => {
             deleteChat,
             fetchDriveItems, // Можно вызывать для ручного обновления
             toggleDriveItemSelection,
+
+            generateFromFileClick, // Новая функция для клика по файлу
 
             // Старые функции (удалить или адаптировать)
             // setMessages, // Прямое изменение сообщений теперь не нужно
