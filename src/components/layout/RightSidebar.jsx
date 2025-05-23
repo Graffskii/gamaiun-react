@@ -3,6 +3,7 @@ import React from 'react';
 import UserProfile from '../sidebar/UserProfile';
 import { useAppContext } from '../../contexts/AppContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { Link, useLocation } from 'react-router-dom'; // Импортируем Link и useLocation
 
 const RightSidebar = () => {
   const {
@@ -12,7 +13,8 @@ const RightSidebar = () => {
     chatMode,    // Получаем текущий режим
     chats        // Получаем список всех чатов
   } = useAppContext();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const location = useLocation(); // Для активного состояния ссылки админки
 
   const handleLogout = () => {
     logout();
@@ -30,6 +32,8 @@ const RightSidebar = () => {
       }
   };
 
+  const isAdminRouteActive = location.pathname.startsWith('/admin');
+
   const totalChats = chats.length;
   // Подсчет общего количества запросов (пар сообщений user+ai) - примерный подсчет
   // Лучше получать эту статистику с бэкенда, если она важна
@@ -42,6 +46,23 @@ const RightSidebar = () => {
       <div className="p-4 flex-grow overflow-y-auto space-y-6">
         {/* Профиль пользователя */}
         <UserProfile />
+
+        {/* --- Кнопка Админ-панели (только для ADMIN) --- */}
+        {user && user.role === 'ADMIN' && (
+          <div className="mb-4"> {/* Отступ снизу для кнопки */}
+            <Link
+              to="/admin"
+              className={`w-full text-white rounded-button py-2.5 px-4 flex items-center justify-center gap-2 text-sm font-medium transition-colors duration-150 ${
+                isAdminRouteActive
+                  ? 'bg-indigo-600 hover:bg-indigo-700'
+                  : 'bg-gray-700 hover:bg-gray-600'
+              }`}
+            >
+              <i className="ri-settings-3-line"></i>
+              <span>Админ-панель</span>
+            </Link>
+          </div>
+        )}
 
         {/* Информация о текущем чате (если выбран) */}
         {currentChat && (
@@ -98,6 +119,14 @@ const RightSidebar = () => {
 
       {/* Нижняя часть с кнопками */}
       <div className="p-4 border-t border-gray-700 mt-auto space-y-3">
+        {/* --- НОВАЯ КНОПКА "ИНСТРУКЦИЯ" --- */}
+        <Link
+          to="/help"
+          className="w-full bg-gray-700 hover:bg-gray-600 text-white rounded-button py-2 px-4 flex items-center justify-center gap-2 text-sm transition-colors duration-150"
+        >
+          <i className="ri-book-open-line"></i>
+          <span>Инструкция</span>
+        </Link>
         <button
           onClick={toggleSupportModal}
           className="w-full bg-primary hover:bg-blue-600 text-white rounded-button py-2 px-4 flex items-center justify-center gap-2 text-sm"

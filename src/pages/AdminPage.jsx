@@ -44,12 +44,12 @@ const AdminPage = () => {
           >
             <i className="ri-building-line mr-2"></i>Компании
           </Link>
-          <Link
+          {/*<Link
             to="/admin/drive-sync"
             className={`block px-3 py-2 rounded-md text-sm font-medium ${getLinkClass('/admin/drive-sync')}`}
           >
             <i className="ri-refresh-line mr-2"></i>Синхронизация Диска
-          </Link>
+          </Link>*/}
           {/* Другие ссылки админки */}
         </nav>
         {/* Основной контент админки */}

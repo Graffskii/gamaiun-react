@@ -44,7 +44,7 @@ const LeftSidebar = () => {
              {!isLoadingDriveItems && !driveItemsError && (
                  driveItemsTree.length > 0
                     ? <FileTree items={driveItemsTree} />
-                    : <div className="px-2 text-sm text-gray-400">Файлы не найдены. Запустите синхронизацию.</div>
+                    : <div className="px-2 text-sm text-gray-400">Файлы не найдены.</div>
              )}
         </div>
 

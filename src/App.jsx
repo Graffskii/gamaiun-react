@@ -9,6 +9,8 @@ import AdminPage from './pages/AdminPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import UserList from './components/admin/UserList'; // Создадим его ниже
 import CompanyList from './components/admin/CompanyList'; // Путь к CompanyList
+import DriveSyncPage from './components/admin/DriveSyncPage'; // Путь к CompanyList
+import HelpPage from './pages/HelpPage'; // Импортируем новую страницу
 
 // Компонент для защищенных маршрутов
 const PrivateRoute = ({ children }) => {
@@ -51,9 +53,11 @@ function App() {
               <Route index element={<Navigate to="users" replace />} /> {/* Редирект с /admin на /admin/users */}
               <Route path="users" element={<UserList />} />
               <Route path="companies" element={<CompanyList />} />
-              {/*<Route path="drive-sync" element={<DriveSyncPage />} />*/}
+              <Route path="drive-sync" element={<DriveSyncPage />} />
               {/* Другие вложенные маршруты админки */}
+              
             </Route>
+            <Route path="/help" element={<HelpPage />} /> 
           </Routes>
         </AppProvider>
       </AuthProvider>

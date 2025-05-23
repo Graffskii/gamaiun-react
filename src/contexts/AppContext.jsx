@@ -501,7 +501,7 @@ export const AppProvider = ({ children }) => {
             return;
         }
 
-        const originalQuery = originalAiMessage.metadata.originalQuery.query_text;
+        const originalQuery = originalAiMessage.metadata.originalQuery;
         console.log(originalAiMessage)
         const targetFileName = fileInfo.file_name;
 

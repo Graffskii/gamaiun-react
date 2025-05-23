@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import CompanyEditModal from './CompanyEditModal'; // Создадим его следующим
+import CompanyDetailsModal from './CompanyDetailsModal'; // Импортируем новую модалку
 
 const CompanyList = () => {
   const [companies, setCompanies] = useState([]);
@@ -10,8 +11,11 @@ const CompanyList = () => {
   const { token } = useAuth();
 
   // Состояния для модального окна
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false); // Переименовал для ясности
   const [editingCompany, setEditingCompany] = useState(null); // null для новой, объект для редактирования
+  // --- Стейты для Details модалки ---
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [viewingCompanyId, setViewingCompanyId] = useState(null);
 
   const fetchCompanies = useCallback(async () => {
     if (!token) return;
@@ -42,19 +46,27 @@ const CompanyList = () => {
   // --- Обработчики для модального окна ---
   const handleOpenCreateModal = () => {
     setEditingCompany(null); // null означает создание новой компании
-    setIsModalOpen(true);
+    setIsEditModalOpen(true);
     setError(null);
+  };
+
+  // --- Открытие модалки деталей ---
+  const handleOpenDetailsModal = (companyId) => {
+    setViewingCompanyId(companyId);
+    setIsDetailsModalOpen(true);
   };
 
   const handleOpenEditModal = (company) => {
     setEditingCompany(company);
-    setIsModalOpen(true);
+    setIsEditModalOpen(true);
     setError(null);
   };
 
   const handleCloseModal = () => {
-    setIsModalOpen(false);
+    setIsEditModalOpen(false);
+    setIsDetailsModalOpen(false);
     setEditingCompany(null);
+    setViewingCompanyId(null);
   };
 
   // --- Обработка создания/обновления компании (вызывается из модалки) ---
@@ -173,6 +185,13 @@ const CompanyList = () => {
                   </td>
                   <td className="px-5 py-4 text-sm">
                     <button
+                      onClick={() => handleOpenDetailsModal(company.id)}
+                      className="text-blue-400 hover:text-blue-300 mr-3"
+                      title="Посмотреть детали компании"
+                    >
+                      <i className="ri-eye-line"></i>
+                    </button>
+                    <button
                       onClick={() => handleOpenEditModal(company)}
                       className="text-indigo-400 hover:text-indigo-300 mr-3"
                       title="Редактировать компанию"
@@ -195,12 +214,19 @@ const CompanyList = () => {
         </div>
       )}
 
-      {isModalOpen && (
+      {isEditModalOpen && (
         <CompanyEditModal
-          isOpen={isModalOpen}
+          isOpen={isEditModalOpen}
           onClose={handleCloseModal}
           companyToEdit={editingCompany} // Может быть null для создания
           onCompanySave={handleCompanySave}
+        />
+      )}
+      {isDetailsModalOpen && viewingCompanyId && (
+        <CompanyDetailsModal
+          isOpen={isDetailsModalOpen}
+          onClose={handleCloseModal}
+          companyId={viewingCompanyId}
         />
       )}
     </div>
